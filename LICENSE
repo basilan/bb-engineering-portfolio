@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 basilan
+Copyright (c) 2025 Brian Boelsterli / Cyclonix Systems
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,58 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Additional Terms for Reference Implementations
+
+### Educational and Demonstration Purposes Only
+
+These reference implementations are provided for educational, learning, and 
+demonstration purposes. They are NOT intended for production use without 
+significant additional security hardening, testing, and compliance validation.
+
+### No Production Warranties
+
+- No warranty or guarantee of fitness for production environments
+- No commercial support or maintenance provided
+- Users assume full responsibility for security, compliance, and operational concerns
+- Synthetic data only - never use real customer or sensitive data
+
+### Compliance and Security Responsibilities  
+
+Each user is solely responsible for:
+- Ensuring compliance with applicable laws and regulations
+- Implementing appropriate security measures for their environment
+- Conducting security reviews and vulnerability assessments
+- Managing API keys, credentials, and access controls securely
+- Following their organization's data governance policies
+
+### Cost Management
+
+- Cloud infrastructure costs are the user's responsibility
+- Implementations include automatic cleanup and budget controls
+- Users should monitor and manage their own cloud resource consumption
+- Demo environments should be destroyed when not actively in use
+
+### Commercial Use
+
+While the MIT license permits commercial use, these reference implementations 
+require significant additional development, testing, and hardening before being 
+suitable for commercial production environments.
+
+### Contributing
+
+Contributions to improve security, documentation, or functionality are welcome
+via pull requests. All contributions will be subject to the same MIT license terms.
+Contributors retain attribution for their specific contributions while supporting
+the overall professional positioning of the initiative.
+
+### Support and Liability
+
+- No technical support provided beyond community GitHub discussions
+- Community support through GitHub issues and discussions
+- Maintainer reserves right to archive or discontinue repositories
+- Zero liability for any damages arising from use of these implementations
+
+By using these reference implementations, you acknowledge and agree to these terms.
