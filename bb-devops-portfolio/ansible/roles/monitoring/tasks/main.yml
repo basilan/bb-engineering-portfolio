@@ -1,0 +1,79 @@
+---
+- name: Install monitoring tools
+  package:
+    name:
+      - htop
+      - iotop
+      - sysstat
+      - netstat-nat
+      - curl
+      - wget
+    state: present
+  become: yes
+
+- name: Install CloudWatch agent (Ubuntu/Debian)
+  get_url:
+    url: https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+    dest: /tmp/amazon-cloudwatch-agent.deb
+    mode: '0644'
+  become: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install CloudWatch agent package (Ubuntu/Debian)
+  apt:
+    deb: /tmp/amazon-cloudwatch-agent.deb
+    state: present
+  become: yes
+  when: ansible_os_family == "Debian"
+
+- name: Configure CloudWatch agent
+  template:
+    src: cloudwatch-config.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+  notify: restart cloudwatch agent
+
+- name: Start and enable CloudWatch agent
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Create log monitoring script
+  template:
+    src: log-monitor.sh.j2
+    dest: /usr/local/bin/log-monitor.sh
+    owner: root
+    group: root
+    mode: '0755'
+  become: yes
+
+- name: Add log monitoring cron job
+  cron:
+    name: "System log monitoring"
+    minute: "*/5"
+    job: "/usr/local/bin/log-monitor.sh"
+    user: root
+  become: yes
+
+- name: Configure logrotate for application logs
+  template:
+    src: app-logrotate.conf.j2
+    dest: /etc/logrotate.d/bb-iac-app
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+
+- name: Create monitoring dashboard endpoint
+  template:
+    src: monitoring.html.j2
+    dest: /var/www/html/monitoring.html
+    owner: www-data
+    group: www-data
+    mode: '0644'
+  become: yes

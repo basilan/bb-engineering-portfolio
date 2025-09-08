@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BB Engineering - IaC Integration Pipeline</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .status-card {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        .status-card:hover {
+            transform: translateY(-5px);
+        }
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+        }
+        .timestamp {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 20px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .links {
+            margin: 20px 0;
+        }
+        .links a {
+            color: #FFD700;
+            text-decoration: none;
+            margin: 0 15px;
+            padding: 8px 16px;
+            border: 1px solid #FFD700;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        .links a:hover {
+            background: #FFD700;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 BB Engineering IaC Pipeline</h1>
+        
+        <p style="text-align: center; font-size: 1.2rem; margin-bottom: 30px;">
+            Enterprise-Grade Infrastructure as Code Integration
+        </p>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <h3>✅ Infrastructure</h3>
+                <p>Terraform deployed successfully</p>
+                <small>AWS VPC, EC2, S3, Security Groups</small>
+            </div>
+            
+            <div class="status-card">
+                <h3>✅ Configuration</h3>
+                <p>Ansible provisioning complete</p>
+                <small>Security hardening, Nginx, Monitoring</small>
+            </div>
+            
+            <div class="status-card">
+                <h3>✅ Security</h3>
+                <p>CIS benchmarks applied</p>
+                <small>Firewall, SSH hardening, Encryption</small>
+            </div>
+            
+            <div class="status-card">
+                <h3>✅ Monitoring</h3>
+                <p>CloudWatch agent active</p>
+                <small>Logs, Metrics, Alerting</small>
+            </div>
+        </div>
+
+        <div class="links">
+            <a href="/monitoring.html">📊 Monitoring Dashboard</a>
+            <a href="https://github.com/basilan/bb-engineering-portfolio">📁 Source Code</a>
+        </div>
+
+        <div class="footer">
+            <p><strong>Deployed by:</strong> GitHub Actions → Terraform → Ansible</p>
+            <p class="timestamp">
+                <strong>Instance:</strong> {{ ansible_hostname }}<br>
+                <strong>Deployed:</strong> {{ ansible_date_time.iso8601 }}<br>
+                <strong>Region:</strong> {{ ansible_ec2_placement_region | default('us-east-1') }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

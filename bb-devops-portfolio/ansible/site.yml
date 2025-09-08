@@ -1,0 +1,95 @@
+---
+# Main playbook for bb-iac-integrated-pipeline
+# Orchestrates security hardening, web server setup, and monitoring
+
+- name: Configure Web Servers with Security Hardening
+  hosts: web
+  become: true
+  gather_facts: true
+  
+  vars:
+    # Security configuration
+    security_hardening_enabled: true
+    fail2ban_enabled: true
+    ufw_enabled: true
+    
+    # Web server configuration  
+    nginx_remove_default_vhost: true
+    nginx_vhosts:
+      - listen: "80"
+        server_name: "{{ ansible_host }}"
+        root: "/var/www/html"
+        index: "index.html index.htm"
+        access_log: "/var/log/nginx/{{ ansible_host }}.access.log"
+        error_log: "/var/log/nginx/{{ ansible_host }}.error.log"
+        
+    # Application configuration
+    app_name: "bb-iac-demo"
+    app_version: "1.0.0"
+    
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      tags: always
+      
+    - name: Ensure Python3 and pip are installed
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-setuptools
+        state: present
+      tags: always
+
+  roles:
+    - role: security
+      tags: [security, hardening]
+      when: security_hardening_enabled | default(true)
+      
+    - role: nginx
+      tags: [nginx, webserver]
+      
+    - role: monitoring
+      tags: [monitoring, logging]
+
+  post_tasks:
+    - name: Create custom index page
+      template:
+        src: templates/index.html.j2
+        dest: /var/www/html/index.html
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      notify: restart nginx
+      tags: [webserver, content]
+      
+    - name: Create health check endpoint
+      copy:
+        content: |
+          {
+            "status": "healthy",
+            "timestamp": "{{ ansible_date_time.iso8601 }}",
+            "version": "{{ app_version }}",
+            "server": "{{ inventory_hostname }}"
+          }
+        dest: /var/www/html/health
+        owner: www-data
+        group: www-data
+        mode: '0644'
+      tags: [webserver, health]
+      
+    - name: Ensure nginx is started and enabled
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+      tags: [nginx, webserver]
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+      tags: [nginx]

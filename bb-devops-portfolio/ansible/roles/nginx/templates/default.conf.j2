@@ -1,0 +1,63 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    root /var/www/html;
+    index index.html index.htm;
+
+    server_name _;
+
+    # Include security headers
+    include /etc/nginx/conf.d/security-headers.conf;
+
+    # Main location block
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Monitoring endpoint
+    location /monitoring.html {
+        try_files $uri =404;
+    }
+
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Security: deny access to config files
+    location ~* \.(conf|config|cfg|ini)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Optimize static file serving
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # Error pages
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+
+    location = /50x.html {
+        root /var/www/html;
+    }
+}

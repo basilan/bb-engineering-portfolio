@@ -1,0 +1,408 @@
+name: IaC Integrated Pipeline CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'bb-iac-integrated-pipeline/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'bb-iac-integrated-pipeline/**'
+  workflow_dispatch:
+    inputs:
+      deploy_environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      run_integration_tests:
+        description: 'Run integration tests (requires AWS credentials)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TF_VAR_environment: ${{ github.event.inputs.deploy_environment || 'dev' }}
+  TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+  TF_VAR_notification_email: ${{ secrets.NOTIFICATION_EMAIL }}
+  AWS_REGION: us-east-1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Validation and Security Scanning
+  validate:
+    name: Validate Infrastructure Code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bb-iac-integrated-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.5
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Ansible
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible boto3 pytest requests
+    
+    - name: Terraform Format Check
+      run: terraform fmt -check -recursive
+      working-directory: bb-iac-integrated-pipeline/terraform
+    
+    - name: Terraform Init
+      run: terraform init -backend=false
+      working-directory: bb-iac-integrated-pipeline/terraform
+    
+    - name: Terraform Validate
+      run: terraform validate
+      working-directory: bb-iac-integrated-pipeline/terraform
+    
+    - name: Ansible Syntax Check
+      run: ansible-playbook --syntax-check site.yml
+      working-directory: bb-iac-integrated-pipeline/ansible
+    
+    - name: Ansible Lint
+      run: |
+        pip install ansible-lint
+        ansible-lint site.yml
+      working-directory: bb-iac-integrated-pipeline/ansible
+      continue-on-error: true
+    
+    - name: Security Scan - Terraform
+      uses: aquasecurity/tfsec-action@v1.0.0
+      with:
+        working_directory: bb-iac-integrated-pipeline/terraform
+        soft_fail: true
+    
+    - name: Security Scan - Ansible
+      run: |
+        # Run basic security checks on Ansible playbooks
+        python3 -c "
+        import yaml
+        import sys
+        import os
+        
+        def check_ansible_security():
+            playbook_path = 'ansible/site.yml'
+            if not os.path.exists(playbook_path):
+                print('✅ Ansible playbook not found for security scan')
+                return 0
+            
+            with open(playbook_path) as f:
+                playbook = yaml.safe_load(f)
+            
+            security_issues = []
+            
+            # Check for become usage (should be controlled)
+            if isinstance(playbook, list):
+                for play in playbook:
+                    if isinstance(play, dict) and play.get('become') is True:
+                        if not play.get('vars', {}).get('security_hardening_enabled'):
+                            security_issues.append('become: true without security hardening')
+            
+            if security_issues:
+                print('❌ Ansible security issues found:')
+                for issue in security_issues:
+                    print(f'  - {issue}')
+                return 1
+            else:
+                print('✅ Ansible security check passed')
+                return 0
+        
+        sys.exit(check_ansible_security())
+        "
+      working-directory: bb-iac-integrated-pipeline
+
+  # Infrastructure Planning
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: bb-iac-integrated-pipeline/terraform
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.5
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+      if: secrets.AWS_ACCESS_KEY_ID != ''
+    
+    - name: Terraform Init
+      run: terraform init
+    
+    - name: Terraform Plan
+      run: |
+        terraform plan -detailed-exitcode -out=tfplan
+        echo "PLAN_EXITCODE=$?" >> $GITHUB_ENV
+      continue-on-error: true
+    
+    - name: Upload Terraform Plan
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan
+        path: bb-iac-integrated-pipeline/terraform/tfplan
+        retention-days: 5
+    
+    - name: Comment Plan Results
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const fs = require('fs');
+          const planExitCode = process.env.PLAN_EXITCODE;
+          
+          let summary = '';
+          if (planExitCode === '0') {
+            summary = '✅ **Terraform Plan**: No changes required';
+          } else if (planExitCode === '2') {
+            summary = '📋 **Terraform Plan**: Changes detected - review required';
+          } else {
+            summary = '❌ **Terraform Plan**: Plan failed - check logs';
+          }
+          
+          const comment = `## Infrastructure Plan Results
+          
+          ${summary}
+          
+          ### Plan Details
+          - Environment: \`${{ env.TF_VAR_environment }}\`
+          - Region: \`${{ env.AWS_REGION }}\`
+          - Exit Code: \`${planExitCode}\`
+          
+          Please review the plan output in the workflow logs before merging.
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  # Infrastructure Deployment (only on workflow_dispatch or main branch)
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate, plan]
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_environment != '') || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    environment: 
+      name: ${{ github.event.inputs.deploy_environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: bb-iac-integrated-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.5
+    
+    - name: Setup Python and Ansible
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Ansible and Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible boto3 pytest requests
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
+        chmod 600 ~/.ssh/id_rsa
+        chmod 644 ~/.ssh/id_rsa.pub
+    
+    - name: Deploy Infrastructure
+      run: |
+        cd terraform
+        terraform init
+        terraform apply -auto-approve
+        terraform output -json > ../terraform-outputs.json
+    
+    - name: Wait for Instance Readiness
+      run: |
+        echo "Waiting for instance to be ready for Ansible..."
+        sleep 60
+    
+    - name: Configure Infrastructure
+      run: |
+        cd ansible
+        # Update inventory with Terraform outputs
+        python3 << 'EOF'
+        import json
+        import yaml
+        
+        # Load Terraform outputs
+        with open('../terraform-outputs.json') as f:
+            outputs = json.load(f)
+        
+        # Create dynamic inventory
+        inventory = {
+            'all': {
+                'children': {
+                    'web': {
+                        'hosts': {
+                            'web1': {
+                                'ansible_host': outputs['web_instance_public_ip']['value'],
+                                'ansible_user': 'ansible',
+                                'ansible_ssh_private_key_file': '~/.ssh/id_rsa',
+                                'instance_id': outputs['web_instance_id']['value'],
+                                'environment': outputs.get('environment', {}).get('value', 'dev')
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        with open('inventory/hosts.yml', 'w') as f:
+            yaml.dump(inventory, f, default_flow_style=False)
+        EOF
+        
+        # Run Ansible playbook
+        ansible-playbook -i inventory/hosts.yml site.yml
+    
+    - name: Save Terraform Outputs
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-outputs-${{ env.TF_VAR_environment }}
+        path: bb-iac-integrated-pipeline/terraform-outputs.json
+        retention-days: 30
+
+  # Integration Testing
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true') || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    defaults:
+      run:
+        working-directory: bb-iac-integrated-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Test Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 pytest requests
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Download Terraform Outputs
+      uses: actions/download-artifact@v3
+      with:
+        name: terraform-outputs-${{ env.TF_VAR_environment }}
+        path: bb-iac-integrated-pipeline/
+    
+    - name: Run Integration Tests
+      run: |
+        python -m pytest tests/test_integration.py -v --tb=short --junit-xml=test-results.xml
+    
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ env.TF_VAR_environment }}
+        path: bb-iac-integrated-pipeline/test-results.xml
+        retention-days: 30
+    
+    - name: Publish Test Results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Integration Tests
+        path: bb-iac-integrated-pipeline/test-results.xml
+        reporter: java-junit
+
+  # Cleanup (optional, manual trigger)
+  cleanup:
+    name: Cleanup Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.deploy_environment, 'cleanup')
+    environment:
+      name: cleanup-${{ github.event.inputs.deploy_environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: bb-iac-integrated-pipeline/terraform
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.5
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Terraform Init
+      run: terraform init
+    
+    - name: Terraform Destroy
+      run: terraform destroy -auto-approve
+    
+    - name: Cleanup Confirmation
+      run: echo "✅ Infrastructure cleanup completed for environment: ${{ env.TF_VAR_environment }}"

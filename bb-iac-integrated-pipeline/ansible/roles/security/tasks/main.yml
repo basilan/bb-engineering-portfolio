@@ -1,0 +1,167 @@
+---
+# Security hardening tasks following CIS benchmarks and enterprise best practices
+
+- name: Install security packages
+  apt:
+    name:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+      - apt-listchanges
+      - logwatch
+      - rkhunter
+      - chkrootkit
+    state: present
+    update_cache: true
+  tags: [security, packages]
+
+- name: Configure automatic security updates
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart unattended-upgrades
+  tags: [security, updates]
+
+- name: Enable unattended upgrades
+  template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [security, updates]
+
+- name: Configure UFW firewall rules
+  ufw:
+    rule: "{{ item.rule }}"
+    port: "{{ item.port | default(omit) }}"
+    proto: "{{ item.proto | default(omit) }}"
+    src: "{{ item.src | default(omit) }}"
+    comment: "{{ item.comment | default(omit) }}"
+  loop:
+    - { rule: allow, port: 22, proto: tcp, comment: "SSH access" }
+    - { rule: allow, port: 80, proto: tcp, comment: "HTTP access" }
+    - { rule: allow, port: 443, proto: tcp, comment: "HTTPS access" }
+    - { rule: deny, port: 23, proto: tcp, comment: "Deny Telnet" }
+    - { rule: deny, port: 135, proto: tcp, comment: "Deny RPC" }
+  notify: enable ufw
+  tags: [security, firewall]
+
+- name: Set UFW default policies
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+    - { direction: routed, policy: deny }
+  notify: enable ufw
+  tags: [security, firewall]
+
+- name: Configure fail2ban for SSH protection
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart fail2ban
+  tags: [security, fail2ban]
+
+- name: Disable root login via SSH
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+    state: present
+    backup: true
+  notify: restart ssh
+  when: disable_root_login | default(true)
+  tags: [security, ssh]
+
+- name: Configure SSH key-only authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+    backup: true
+  loop:
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+    - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+    - { regexp: '^#?ChallengeResponseAuthentication', line: 'ChallengeResponseAuthentication no' }
+    - { regexp: '^#?UsePAM', line: 'UsePAM no' }
+  notify: restart ssh
+  tags: [security, ssh]
+
+- name: Set secure permissions on SSH config
+  file:
+    path: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+  tags: [security, ssh]
+
+- name: Configure system login banner
+  copy:
+    content: |
+      ************************************************************************
+      * WARNING: This system is for authorized users only.                   *
+      * All activity is logged and monitored.                                *
+      * Unauthorized access is prohibited and will be prosecuted.            *
+      ************************************************************************
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [security, banner]
+
+- name: Set secure kernel parameters
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    reload: true
+  loop:
+    - { name: net.ipv4.ip_forward, value: 0 }
+    - { name: net.ipv4.conf.all.send_redirects, value: 0 }
+    - { name: net.ipv4.conf.default.send_redirects, value: 0 }
+    - { name: net.ipv4.conf.all.accept_source_route, value: 0 }
+    - { name: net.ipv4.conf.default.accept_source_route, value: 0 }
+    - { name: net.ipv4.conf.all.accept_redirects, value: 0 }
+    - { name: net.ipv4.conf.default.accept_redirects, value: 0 }
+    - { name: net.ipv4.conf.all.log_martians, value: 1 }
+    - { name: net.ipv4.conf.default.log_martians, value: 1 }
+    - { name: net.ipv4.icmp_echo_ignore_broadcasts, value: 1 }
+    - { name: net.ipv4.tcp_syncookies, value: 1 }
+  tags: [security, kernel]
+
+- name: Remove unnecessary packages
+  apt:
+    name:
+      - telnet
+      - rsh-client
+      - rsh-redone-client
+      - talk
+      - tftp
+    state: absent
+    purge: true
+  tags: [security, cleanup]
+
+- name: Set secure file permissions
+  file:
+    path: "{{ item.path }}"
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/passwd, mode: '0644' }
+    - { path: /etc/group, mode: '0644' }
+    - { path: /etc/shadow, mode: '0640', group: 'shadow' }
+    - { path: /etc/gshadow, mode: '0640', group: 'shadow' }
+    - { path: /boot/grub/grub.cfg, mode: '0600' }
+  tags: [security, permissions]

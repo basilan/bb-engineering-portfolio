@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# BB IaC Pipeline - Log Monitoring Script
+# Monitors critical system events and sends alerts
+
+LOG_FILE="/var/log/bb-iac-monitor.log"
+ALERT_THRESHOLD=10
+
+# Function to log with timestamp
+log_with_timestamp() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# Check for authentication failures
+auth_failures=$(grep "authentication failure" /var/log/auth.log | grep "$(date '+%b %d')" | wc -l)
+if [ "$auth_failures" -gt "$ALERT_THRESHOLD" ]; then
+    log_with_timestamp "ALERT: High number of authentication failures detected: $auth_failures"
+fi
+
+# Check for disk space
+disk_usage=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
+if [ "$disk_usage" -gt 80 ]; then
+    log_with_timestamp "ALERT: Disk usage is above 80%: ${disk_usage}%"
+fi
+
+# Check for memory usage
+mem_usage=$(free | awk '/Mem/{printf("%.0f"), $3/$2*100}')
+if [ "$mem_usage" -gt 85 ]; then
+    log_with_timestamp "ALERT: Memory usage is above 85%: ${mem_usage}%"
+fi
+
+# Check for load average
+load_avg=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | sed 's/,//')
+if (( $(echo "$load_avg > 2.0" | bc -l) )); then
+    log_with_timestamp "ALERT: High load average detected: $load_avg"
+fi
+
+# Check nginx status
+if ! systemctl is-active --quiet nginx; then
+    log_with_timestamp "ALERT: Nginx service is not running"
+fi
+
+# Check for security events
+security_events=$(grep -i "failed\|error\|denied" /var/log/auth.log | grep "$(date '+%b %d')" | wc -l)
+if [ "$security_events" -gt 5 ]; then
+    log_with_timestamp "INFO: Security events detected today: $security_events"
+fi
+
+# System health summary
+log_with_timestamp "HEALTH: CPU Load: $load_avg, Memory: ${mem_usage}%, Disk: ${disk_usage}%"
