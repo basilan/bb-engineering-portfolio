@@ -1,82 +1,18 @@
-.PHONY: help setup check steel-thread clean destroy
+.PHONY: help setup check-setup steel-thread teardown
 
 # Default target
 help: ## Show this help message
 	@echo "BB DevOps Portfolio - DevOps Reference Implementation"
 	@echo "===================================================="
 	@echo ""
-	@echo "Essential targets:"
+	@echo "Core targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 	@echo ""
-	@echo "🔄 Steel-Thread Demo Flow:"
-	@echo "┌─────────────────────────────────────────────────────────────────────────────┐"
-	@echo "│                          COMPLETE DEMO LIFECYCLE                           │"
-	@echo "├─────────────────────────────────────────────────────────────────────────────┤"
-	@echo "│  1️⃣  make setup     → Initialize tools + create terraform.tfvars + SSH key │"
-	@echo "│     ├── Tool detection (terraform, ansible, aws, python)                  │"
-	@echo "│     ├── AWS credentials validation                                         │"
-	@echo "│     ├── SSH key generation (if missing)                                   │"
-	@echo "│     └── Terraform initialization                                           │"
-	@echo "│                                                                             │"
-	@echo "│  2️⃣  make check     → Quick validation without AWS deployment              │"
-	@echo "│     ├── CLI tools detection                                                │"
-	@echo "│     ├── Terraform syntax validation                                        │"
-	@echo "│     ├── Ansible playbook syntax check                                      │"
-	@echo "│     └── Test suite execution (infrastructure + configuration)             │"
-	@echo "│                                                                             │"
-	@echo "│  3️⃣  make steel-thread → Complete end-to-end demo (THE BIG KAHUNA)       │"
-	@echo "│     ├── 🔍 Environment validation                                          │"
-	@echo "│     ├── 🚀 Infrastructure provisioning (Terraform → AWS)                  │"
-	@echo "│     │   └── Creates: VPC, EC2, S3, CloudWatch, Security Groups           │"
-	@echo "│     ├── ⚙️  Configuration management (Ansible)                            │"
-	@echo "│     │   ├── Security hardening (CIS benchmarks, UFW, Fail2Ban)            │"
-	@echo "│     │   ├── Web server setup (Nginx + SSL + security headers)             │"
-	@echo "│     │   └── Monitoring setup (CloudWatch agent + log rotation)            │"
-	@echo "│     ├── ✅ Integration validation (HTTP tests + security headers)         │"
-	@echo "│     ├── 🌐 Live demonstration (show running infrastructure)               │"
-	@echo "│     └── 🧹 Resource cleanup (destroy all AWS resources)                   │"
-	@echo "│                                                                             │"
-	@echo "│  4️⃣  make clean    → Clean up local temporary files                       │"
-	@echo "│     └── Removes: terraform cache, test cache, ansible backup files       │"
-	@echo "│                                                                             │"
-	@echo "│  5️⃣  make destroy  → Emergency cleanup (if steel-thread didn't finish)   │"
-	@echo "│     └── Force destroy all AWS resources                                    │"
-	@echo "└─────────────────────────────────────────────────────────────────────────────┘"
+	@echo "Usage flow:"
+	@echo "  make setup → make check-setup → make steel-thread → [prompted] → make teardown"
 	@echo ""
-	@echo "🔗 Target Dependencies:"
-	@echo "┌─────────────────────────────────────────────────────────────────────────────┐"
-	@echo "│                            DEPENDENCY FLOW                                 │"
-	@echo "├─────────────────────────────────────────────────────────────────────────────┤"
-	@echo "│                                                                             │"
-	@echo "│  setup (prerequisite for all)                                              │"
-	@echo "│    │                                                                       │"
-	@echo "│    ├──→ check (validates setup worked)                                     │"
-	@echo "│    │                                                                       │"
-	@echo "│    └──→ steel-thread (requires setup + includes check validation)         │"
-	@echo "│              │                                                             │"
-	@echo "│              ├──→ [internal] terraform plan                               │"
-	@echo "│              ├──→ [internal] terraform apply                              │"
-	@echo "│              ├──→ [internal] ansible security role                       │"
-	@echo "│              ├──→ [internal] ansible nginx role                          │"
-	@echo "│              ├──→ [internal] ansible monitoring role                     │"
-	@echo "│              ├──→ [internal] integration tests                           │"
-	@echo "│              └──→ [internal] terraform destroy (cleanup)                 │"
-	@echo "│                                                                             │"
-	@echo "│  clean (independent - removes local files)                                 │"
-	@echo "│                                                                             │"
-	@echo "│  destroy (emergency only - removes AWS resources)                          │"
-	@echo "│                                                                             │"
-	@echo "└─────────────────────────────────────────────────────────────────────────────┘"
-	@echo ""
-	@echo "⚡ Quick Start:"
-	@echo "  make setup && make check && make steel-thread"
-	@echo ""
-	@echo "🔧 Development Cycle:"
-	@echo "  make setup    (first time only)"
-	@echo "  make check    (fast validation)"
-	@echo "  make clean    (cleanup temp files)"
-	@echo ""
-	@echo "📋 Prerequisites in README.md - run if setup fails"
+	@echo "⚠️  IMPORTANT: steel-thread deploys AWS resources that cost money"
+	@echo "    Always run teardown after steel-thread to avoid charges"
 
 setup: ## Initialize environment and install dependencies
 	@echo "🔧 Setting up environment..."
@@ -111,7 +47,7 @@ setup: ## Initialize environment and install dependencies
 	@echo "✅ Environment setup complete"
 
 
-check: ## Check all configurations without AWS deployment
+check-setup: ## Check all configurations without AWS deployment
 	@echo "🔍 Quick validation without AWS deployment"
 	@echo "═══════════════════════════════════════════"
 	@./scripts/find-tools.sh >/dev/null 2>&1 && echo "✅ CLI tools detected" || { echo "❌ Missing tools - see README.md"; exit 1; }
@@ -141,7 +77,7 @@ steel-thread: ## Complete end-to-end demo: deploy → configure → test → sho
 	@echo "🚀 ENTRY: Infrastructure Provisioning (Terraform → AWS)"
 	@echo "   → Planning deployment: VPC, EC2, S3, Security Groups, CloudWatch"
 	@TERRAFORM_CMD=$$(./scripts/find-tools.sh 2>/dev/null | grep "TERRAFORM_PATH=" | cut -d'"' -f2) && \
-		cd terraform && $$TERRAFORM_CMD plan -var-file=terraform.tfvars -compact-warnings
+		cd terraform && $$TERRAFORM_CMD plan -var-file=terraform.tfvars -compact-warnings | grep -E '^(data\.|#|Plan:|Terraform|~|Apply|Error:|Warning:)'
 	@echo "   → Provisioning infrastructure: Creating 14 AWS resources"
 	@TERRAFORM_CMD=$$(./scripts/find-tools.sh 2>/dev/null | grep "TERRAFORM_PATH=" | cut -d'"' -f2) && \
 		cd terraform && $$TERRAFORM_CMD apply -var-file=terraform.tfvars -auto-approve
@@ -189,35 +125,33 @@ steel-thread: ## Complete end-to-end demo: deploy → configure → test → sho
 	@echo "🎉 STEEL-THREAD COMPLETE!"
 	@echo "Real infrastructure accessible at URLs above ↑"
 	@echo ""
-	@echo "Press ENTER to destroy all resources and cleanup..."
-	@read
+	@echo "⚠️  CRITICAL: AWS resources are still running and costing money!"
 	@echo ""
-	@echo "🧹 ENTRY: Resource Cleanup"
+	@read -p "Run teardown to destroy all AWS resources now? (y/N): " cleanup && \
+		if [ "$$cleanup" = "y" ]; then \
+			$(MAKE) teardown; \
+		else \
+			echo ""; \
+			echo "⚠️  WARNING: Resources still deployed - run 'make teardown' when done"; \
+			echo "   → Current charges: EC2 t3.micro (~$$0.0104/hour)"; \
+			echo "   → Estimated cost if left running: ~$$0.25/day"; \
+			echo ""; \
+		fi
+
+teardown: ## Destroy all AWS resources and clean local files
+	@echo "🧹 ENTRY: Complete Teardown"
 	@echo "   → Infrastructure destruction: Destroying all AWS resources (VPC, EC2, S3, etc.)"
 	@TERRAFORM_CMD=$$(./scripts/find-tools.sh 2>/dev/null | grep "TERRAFORM_PATH=" | cut -d'"' -f2) && \
 		cd terraform && $$TERRAFORM_CMD destroy -var-file=terraform.tfvars -auto-approve
 	@echo "   → Cleanup verification: Confirming all resources destroyed"
 	@TERRAFORM_CMD=$$(./scripts/find-tools.sh 2>/dev/null | grep "TERRAFORM_PATH=" | cut -d'"' -f2) && \
-		cd terraform && $$TERRAFORM_CMD state list | wc -l | awk '{if($$1==0) print "   → Resource cleanup: ✅ ALL DESTROYED"; else print "   → Resource cleanup: ⚠️  SOME REMAIN"}'
-	@echo "🧹 EXIT: Cleanup complete"
-	@echo ""
-	@echo "🏆 Steel-thread demo complete - ready for next run!"
-
-clean: ## Clean up temporary files and state
-	@echo "🧹 Cleaning up temporary files..."
-	@rm -f terraform/tfplan
-	@rm -f terraform/.terraform.lock.hcl
-	@rm -rf terraform/.terraform/
-	@rm -rf tests/__pycache__/
-	@rm -rf ansible/retry/
+		cd terraform && $$TERRAFORM_CMD state list | wc -l | awk '{if($$1==0) print "   → AWS resources: ✅ ALL DESTROYED"; else print "   → AWS resources: ⚠️  SOME REMAIN"}'
+	@echo "   → Local file cleanup: Removing temporary files"
+	@rm -f terraform/tfplan terraform/.terraform.lock.hcl
+	@rm -rf terraform/.terraform/ tests/__pycache__/ ansible/retry/
 	@rm -f ansible/inventory/hosts.yml.bak
-	@echo "✅ Cleanup complete"
-
-destroy: ## Destroy all infrastructure (WARNING: irreversible)
-	@echo "⚠️  WARNING: This will destroy all infrastructure!"
-	@echo "This includes EC2, VPC, S3, CloudWatch logs, and all associated resources"
+	@echo "   → Local files: ✅ CLEANED"
+	@echo "🧹 EXIT: Teardown complete"
 	@echo ""
-	@read -p "Are you sure you want to destroy everything? Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || { echo "❌ Destruction cancelled"; exit 1; }
-	@TERRAFORM_CMD=$$(./scripts/find-tools.sh 2>/dev/null | grep "TERRAFORM_PATH=" | cut -d'"' -f2) && \
-		cd terraform && $$TERRAFORM_CMD destroy -auto-approve || { echo "❌ FAILED - see README.md for setup"; exit 1; }
-	@echo "✅ Infrastructure destroyed"
+	@echo "💰 Cost verification: AWS resources should show $0.00 charges going forward"
+	@echo "🏆 Ready for next steel-thread run!"
